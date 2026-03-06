@@ -1,5 +1,18 @@
+---
+title: "Function Redundancy Analsysis"
+author: "Alexandria igwe"
+date: "03/06/2026"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
 #Functional Redundancy
 #df.ncbi_eggnog_filtered_ncbisplit_count_merged is a data frame with the counts of taxonomic and functional assignment pairs from all sites
+#https://microbiomejournal.biomedcentral.com/articles/10.1186/s40168-024-01838-5
+#FRIa for within community functional redundancy where high FRIa means many taxa perform a function, low FRIa mean few taxa perform a function, and FRIa = 0 mean 1 taxon performs a function
+#FRIb for between community functional redundancy where high FRIb means different taxa perform the same function and low FRIb mean similar taxa perform the same function
+
 ```{r}
 df.ncbi_eggnog_filtered_ncbisplit_count_merged <- readRDS("~/Desktop/R/CASerpSoilDiversity/input/df.ncbi_eggnog_filtered_ncbisplit_count_merged.RDS")
 
@@ -19,10 +32,6 @@ dim(df.ncbi_eggnog_filtered_ncbisplit_count_merged)
 ```
 
 ```{r}
-#https://microbiomejournal.biomedcentral.com/articles/10.1186/s40168-024-01838-5
-#FRIa for within community functional redundancy where high FRIa means many taxa perform a function, low FRIa mean few taxa perform a function, and FRIa = 0 mean 1 taxon performs a function
-#FRIb for between community functional redundancy where high FRIb means different taxa perform the same function and low FRIb mean similar taxa perform the same function
-
 library(dplyr)
 
 calculate_FRIa <- function(df, function_col = "eggnog_4", taxon_col = "ncbi_06phy", group_col = "soil.chem", count_col = "n()") {
