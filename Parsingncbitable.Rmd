@@ -1,0 +1,223 @@
+---
+title: "Parsing DIAMOND+MEGAN ncbi table"
+author: "Alexandria igwe"
+date: "12/25/2022"
+output: html_document
+---
+#The -r2c or --read2class option in MEGAN (Metagenome Analyzer) is used to export read-to-class assignments (taxonomic or functional) from a MEGAN RMA6 file
+#This flag was used to export ncbi and eggNOG functional assignments
+#The assignments for each site were combined into one large data frame. A subset of this data frame was used to test the workflow, then the workflow was applied to the entire data frame.
+#There may be cleaner ways to do this, but essentially a unique list of ncbi assignments was obtained then used to create a taxonomy table for phyloseq.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#subset all data.frame for testing
+```{r}
+#daa2info_r2c_ncbi_eggnog_df_all is the combined output form the --read2class flag
+ncbi_eggnog_df.5000 <- daa2info_r2c_ncbi_eggnog_df_all[sample(nrow(daa2info_r2c_ncbi_eggnog_df_all), 5000), ]
+class(ncbi_eggnog_df.5000)
+
+proportion <- 0.4  # 10% of each group
+ncbi_eggnog_df.10 <- daa2info_r2c_ncbi_eggnog_df_all_assigned %>%
+    group_by(daa2info_r2c_ncbi_eggnog_df_all_assigned$sample_name) %>%
+    sample_frac(proportion)
+
+ncbi_eggnog_df.5000 <- ncbi_eggnog_df.10
+ncbi_eggnog_df.5000 <- daa2info_r2c_ncbi_eggnog_df_all_assigned
+
+ncbi_eggnog_df.5000_assigned <- subset(ncbi_eggnog_df.5000, eggnog != "eggNOG;Not assigned;")
+ncbi_eggnog_df.5000_assigned <- subset(ncbi_eggnog_df.5000_assigned, ncbi != "NCBI; Not assigned;")
+
+ncbi_eggnog_df.5000_assigned <- ncbi_eggnog_df.5000
+
+saveRDS(ncbi_eggnog_df.10,"~/CASerpSoil/input/ncbi_eggnog_df_10.RDS")
+```
+#create ncbi only phyloseq object
+```{r}
+#split ncbi assignment into groups for phyloseq tax table
+unique_ncbi_eggnog_df.5000 <- as.data.frame(unique(ncbi_eggnog_df.5000_assigned$ncbi))
+colnames(unique_ncbi_eggnog_df.5000)[1] <- "ncbi"
+unique_split_ncbi_eggnog_df.5000 <- cSplit(unique_ncbi_eggnog_df.5000, "ncbi", sep = ";", direction = "wide", fixed = FALSE)
+unique_split_ncbi_eggnog_df.5000 <- as.data.frame(unique_split_ncbi_eggnog_df.5000)
+rownames(unique_split_ncbi_eggnog_df.5000) <- c(unique_ncbi_eggnog_df.5000$ncbi)
+```
+```{r}
+#split_ncbi_eggnog_df.5000 <- cSplit(ncbi_eggnog_df.5000_assigned, "ncbi", sep = ";", direction = "wide", fixed = FALSE)
+
+# Initialize a list to store the unique value data frames
+#unique_lists <- list()
+
+# Loop through the column names from ncbi_01 to ncbi_16
+#for (i in 1:15) {
+  # Construct the column name
+#  column_name <- paste0("ncbi_", sprintf("%02d", i))
+  
+  # Check if the column exists in the data frame
+#  if (column_name %in% names(split_ncbi_eggnog_df.5000)) {
+    # Extract unique values and store in a data frame
+#    unique_values <- as.data.frame(unique(split_ncbi_eggnog_df.5000[[column_name]]))
+    
+    # Assign the unique values data frame to the list with a specific name
+#    unique_lists[[column_name]] <- unique_values
+#  } else {
+#   warning(paste("Column", column_name, "does not exist in the data frame."))
+#  }
+#}
+
+# Print the unique lists
+#unique_lists
+```
+```{r}
+#subset bacteria
+split_ncbi_eggnog_df.5000.bacteria <- subset(unique_split_ncbi_eggnog_df.5000, ncbi_03 == "Bacteria")
+#split_ncbi_eggnog_df.5000.bacteria <- subset(split_ncbi_eggnog_df.5000, ncbi_03 == "Bacteria")
+
+#same as below, except columns are shifted
+colnames(split_ncbi_eggnog_df.5000.bacteria)[3] <- "Domain"
+colnames(split_ncbi_eggnog_df.5000.bacteria)[4] <- "Phylum"
+colnames(split_ncbi_eggnog_df.5000.bacteria)[5] <- "Class"
+colnames(split_ncbi_eggnog_df.5000.bacteria)[6] <- "Order"
+colnames(split_ncbi_eggnog_df.5000.bacteria)[7] <- "Family"
+colnames(split_ncbi_eggnog_df.5000.bacteria)[8] <- "Genus"
+colnames(split_ncbi_eggnog_df.5000.bacteria)[9] <- "Species"
+
+#change column name to "Domain"
+#colnames(split_ncbi_eggnog_df.5000.bacteria)[7] <- "Domain"
+#colnames(split_ncbi_eggnog_df.5000.bacteria)[8] <- "Phylum"
+#colnames(split_ncbi_eggnog_df.5000.bacteria)[9] <- "Class"
+#colnames(split_ncbi_eggnog_df.5000.bacteria)[10] <- "Order"
+#colnames(split_ncbi_eggnog_df.5000.bacteria)[11] <- "Family"
+#colnames(split_ncbi_eggnog_df.5000.bacteria)[12] <- "Genus"
+#colnames(split_ncbi_eggnog_df.5000.bacteria)[13] <- "Species"
+
+#create a bacteria only data frame and adjust taxonomy names
+a.split_ncbi_eggnog_df.5000.bacteria <- subset(split_ncbi_eggnog_df.5000.bacteria, !grepl("group", split_ncbi_eggnog_df.5000.bacteria$Phylum))
+b.split_ncbi_eggnog_df.5000.bacteria <- subset(split_ncbi_eggnog_df.5000.bacteria, grepl("group", split_ncbi_eggnog_df.5000.bacteria$Phylum))
+colnames(b.split_ncbi_eggnog_df.5000.bacteria)[4] <- "Superphylum"
+colnames(b.split_ncbi_eggnog_df.5000.bacteria)[5] <- "Phylum"
+colnames(b.split_ncbi_eggnog_df.5000.bacteria)[6] <- "Class"
+colnames(b.split_ncbi_eggnog_df.5000.bacteria)[7] <- "Order"
+colnames(b.split_ncbi_eggnog_df.5000.bacteria)[8] <- "Family"
+colnames(b.split_ncbi_eggnog_df.5000.bacteria)[9] <- "Genus"
+colnames(b.split_ncbi_eggnog_df.5000.bacteria)[10] <- "Species"
+b.split_ncbi_eggnog_df.5000.bacteria[, c(11)] <- NULL
+
+#same as above, but columns shifted
+#colnames(b.split_ncbi_eggnog_df.5000.bacteria)[8] <- "Superphylum"
+#colnames(b.split_ncbi_eggnog_df.5000.bacteria)[9] <- "Phylum"
+#colnames(b.split_ncbi_eggnog_df.5000.bacteria)[10] <- "Class"
+#colnames(b.split_ncbi_eggnog_df.5000.bacteria)[11] <- "Order"
+#colnames(b.split_ncbi_eggnog_df.5000.bacteria)[12] <- "Family"
+#colnames(b.split_ncbi_eggnog_df.5000.bacteria)[13] <- "Genus"
+#colnames(b.split_ncbi_eggnog_df.5000.bacteria)[14] <- "Species"
+#b.split_ncbi_eggnog_df.5000.bacteria[, c(15)] <- NULL
+
+split_ncbi_eggnog_df.5000.bacteria2 <- merge(a.split_ncbi_eggnog_df.5000.bacteria, b.split_ncbi_eggnog_df.5000.bacteria, by = c("ncbi_01","ncbi_02","Domain", "Phylum", "Class", "Order","Family", "Genus", "Species"), all = TRUE)
+split_ncbi_eggnog_df.5000.bacteria2[, c(10:11)] <- NULL
+
+#unique_group <- as.data.frame(unique(split_ncbi_eggnog_df.5000.bacteria2$Class))
+
+# Specify new column order
+#"seq_id","eggnog","sample_name","sample_type",
+new_order <- c("ncbi_01", "ncbi_02", "Domain", "Superphylum","Phylum", "Class", "Order", "Family", "Genus", "Species")
+# Reorder columns
+split_ncbi_eggnog_df.5000.bacteria2 <- split_ncbi_eggnog_df.5000.bacteria2[, new_order]
+
+# Use apply and paste to combine the columns
+split_ncbi_eggnog_df.5000.bacteria2$ncbi <- apply(split_ncbi_eggnog_df.5000.bacteria2[, c(new_order)], 1, paste, collapse = "; ")
+
+# Define custom function to paste values, ignoring NA
+paste_ignore_na <- function(x) {
+  # Filter out NA values
+  x <- na.omit(x)
+  # Paste values together, separated by semicolon
+  #paste(x, collapse = "; ")
+  # Paste values together, separated by a semicolon, and add a trailing semicolon
+  result <- paste(x, collapse = "; ")
+  if (nchar(result) > 0) {  # Only add a semicolon if result is not empty
+    result <- paste0(result, ";")
+  }
+  return(result)
+}
+
+# Combine specified columns into one, separated by a semicolon, ignoring NAs
+split_ncbi_eggnog_df.5000.bacteria2$ncbi <- apply(
+  split_ncbi_eggnog_df.5000.bacteria2[, new_order],
+  1,
+  paste_ignore_na
+)
+
+split_ncbi_eggnog_df.5000.bacteria2 <- subset(split_ncbi_eggnog_df.5000.bacteria2, !grepl("unclassified Bacteria", split_ncbi_eggnog_df.5000.bacteria2$Phylum))
+
+split_ncbi_eggnog_df.5000.bacteria2 <- subset(split_ncbi_eggnog_df.5000.bacteria2, !grepl("environmental samples <bacteria,superkingdom Bacteria>", split_ncbi_eggnog_df.5000.bacteria2$Phylum))
+
+daa2info_ps_tax <- split_ncbi_eggnog_df.5000.bacteria2
+
+# Remove duplicate rows based on the 'ncbi' column
+daa2info_ps_tax <- split_ncbi_eggnog_df.5000.bacteria2 %>%
+  distinct(ncbi, .keep_all = TRUE)
+
+# Now, set the row names to the unique values of the 'ncbi' column
+rownames(daa2info_ps_tax) <- daa2info_ps_tax$ncbi
+
+# Optionally, remove the 'ncbi' column if it is no longer needed
+# daa2info_ps_tax$ncbi <- NULL
+
+# View the resulting data frame with unique row names
+head(daa2info_ps_tax)
+
+class(daa2info_ps_tax)
+```
+##OTU table
+```{r}
+#for otu table
+#https://datacarpentry.org/R-genomics/04-dplyr.html
+#https://stackoverflow.com/questions/9617348/reshape-three-column-data-frame-to-matrix-long-to-wide-format
+
+#aggregate information
+df.ncbi_count <- ncbi_eggnog_df.5000_assigned %>%
+  group_by(ncbi,sample_name) %>%
+  summarize(n())
+unique(df.ncbi_count$sample_name)
+
+daa2info_ps_otu_tmp <- acast(df.ncbi_count, df.ncbi_count$ncbi~df.ncbi_count$sample_name, value.var="n()")
+daa2info_ps_otu_tmp[is.na(daa2info_ps_otu_tmp)] <- 0
+View(daa2info_ps_otu_tmp[1:4,])
+daa2info_ps_otu_tmp <- as.data.frame(daa2info_ps_otu_tmp)
+colnames(daa2info_ps_otu_tmp)
+rownames(daa2info_ps_otu_tmp)
+#daa2info_ps_otu_tmp$ncbi <- rownames(daa2info_ps_otu_tmp)
+
+#https://github.com/joey711/phyloseq/issues/1020
+OTU.ncbi = otu_table(daa2info_ps_otu_tmp, taxa_are_rows = TRUE)
+TAX.ncbi = tax_table(as.matrix(daa2info_ps_tax))
+META.ncbi = sample_data(daa2info_ps_meta)
+physeq.ncbi = phyloseq(OTU.ncbi, TAX.ncbi, META.ncbi)
+physeq.ncbi
+##Change taxa names to 'Seq#'
+taxa_names(physeq.ncbi) <- paste0("Seq", seq(ntaxa(physeq.ncbi)))
+physeq.ncbi
+```
+#decontam - ncbi
+```{r}
+#decontam
+sample_data(physeq.ncbi)$is.neg <- sample_data(physeq.ncbi)$soil.chem == "."
+contamdf.prev.ncbi <- isContaminant(physeq.ncbi, method="prevalence", neg="is.neg")
+table(contamdf.prev.ncbi$contaminant)
+head(which(contamdf.prev.ncbi$contaminant))
+contamdf.prev.ncbi05 <- isContaminant(physeq.ncbi, method="prevalence", neg="is.neg", threshold=0.5)
+table(contamdf.prev.ncbi05$contaminant)
+# Make phyloseq object of presence-absence in negative controls and true samples
+ps.pa.ncbi <- transform_sample_counts(physeq.ncbi, function(abund) 1*(abund>0))
+ps.pa.ncbi.neg <- prune_samples(sample_data(physeq.ncbi)$soil.chem == ".", ps.pa.ncbi)
+ps.pa.ncbi.pos <- prune_samples(sample_data(physeq.ncbi)$soil.chem != ".", ps.pa.ncbi)
+# Make data.frame of prevalence in positive and negative samples
+df.pa.ncbi <- data.frame(pa.ncbi.pos=taxa_sums(ps.pa.ncbi.pos), pa.ncbi.neg=taxa_sums(ps.pa.ncbi.neg),
+                      contaminant=contamdf.prev.ncbi$contaminant)
+ggplot(data=df.pa.ncbi, aes(x=pa.ncbi.neg, y=pa.ncbi.pos, color=contaminant)) + geom_point() +
+  xlab("Prevalence (Negative Controls)") + ylab("Prevalence (True Samples)")
+physeq.ncbi.decontam <- prune_taxa(!contamdf.prev.ncbi05$contaminant, physeq.ncbi)
+physeq.ncbi.decontam
+```
