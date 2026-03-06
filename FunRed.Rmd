@@ -1,0 +1,176 @@
+#Functional Redundancy
+#df.ncbi_eggnog_filtered_ncbisplit_count_merged is a data frame with the counts of taxonomic and functional assignment pairs from all sites
+```{r}
+df.ncbi_eggnog_filtered_ncbisplit_count_merged <- readRDS("~/Desktop/R/CASerpSoilDiversity/input/df.ncbi_eggnog_filtered_ncbisplit_count_merged.RDS")
+
+str(df.ncbi_eggnog_filtered_ncbisplit_count_merged)
+names <- c(1:8,10:19)
+df.ncbi_eggnog_filtered_ncbisplit_count_merged[,names] <- lapply(df.ncbi_eggnog_filtered_ncbisplit_count_merged[,names] , factor)
+str(df.ncbi_eggnog_filtered_ncbisplit_count_merged)
+levels(df.ncbi_eggnog_filtered_ncbisplit_count_merged$soil.chem)
+dim(df.ncbi_eggnog_filtered_ncbisplit_count_merged)
+
+
+library(dplyr)
+df.ncbi_eggnog_filtered_ncbisplit_count_merged <- dplyr::filter(df.ncbi_eggnog_filtered_ncbisplit_count_merged, soil.chem != ".")
+df.ncbi_eggnog_filtered_ncbisplit_count_merged <- droplevels(df.ncbi_eggnog_filtered_ncbisplit_count_merged)
+levels(df.ncbi_eggnog_filtered_ncbisplit_count_merged$soil.chem)
+dim(df.ncbi_eggnog_filtered_ncbisplit_count_merged)
+```
+
+```{r}
+#https://microbiomejournal.biomedcentral.com/articles/10.1186/s40168-024-01838-5
+#FRIa for within community functional redundancy where high FRIa means many taxa perform a function, low FRIa mean few taxa perform a function, and FRIa = 0 mean 1 taxon performs a function
+#FRIb for between community functional redundancy where high FRIb means different taxa perform the same function and low FRIb mean similar taxa perform the same function
+
+library(dplyr)
+
+calculate_FRIa <- function(df, function_col = "eggnog_4", taxon_col = "ncbi_06phy", group_col = "soil.chem", count_col = "n()") {
+  df %>%
+    filter(!is.na(.data[[taxon_col]])) %>%
+    group_by(.data[[group_col]], .data[[function_col]]) %>%
+    mutate(Pi = .data[[count_col]] / sum(.data[[count_col]]),
+           Pi_lnPi = Pi * log(Pi)) %>%
+    summarise(
+      FRIa = -sum(Pi_lnPi),
+      S = n_distinct(.data[[taxon_col]]),
+      FRInorm = FRIa / log(S),
+      .groups = "drop"
+    )
+}
+
+fri_a_results <- calculate_FRIa(df.ncbi_eggnog_filtered_ncbisplit_count_merged)
+
+#write.csv(fri_a_results, "~/Desktop/R/CASerpSoilDiversity/output/fri_a_results_e4n6.csv")
+
+```
+```{r}
+library(tidyr)
+# Prep Pi values per function, taxon, and soil type
+fri_b_prep <- df.ncbi_eggnog_filtered_ncbisplit_count_merged %>%
+  filter(soil.chem %in% c("serpentine", "nonserpentine"),
+         !is.na(ncbi_05)) %>%
+  group_by(eggnog_4, soil.chem) %>%
+  mutate(Total_n = sum(`n()`),
+         Pi = `n()` / Total_n) %>%
+  select(eggnog_4, ncbi_06, soil.chem, Pi)
+
+# Pivot to wide: rows = function + taxa; columns = communities
+#fri_b_wide <- fri_b_prep %>%
+#  pivot_wider(names_from = soil.chem, values_from = Pi, values_fill = list(Pi = 0))
+library(data.table)
+
+dt <- as.data.table(fri_b_prep)
+fri_b_wide <- dcast(dt, eggnog_4 + ncbi_06 ~ soil.chem, value.var = "Pi", fill = 0, fun.aggregate = sum)
+
+# Calculate FRIb
+fri_b <- fri_b_wide %>%
+  group_by(eggnog_4) %>%
+  summarise(FRIb = 1 - 2 * sum(pmin(serpentine, nonserpentine)) /
+                   (sum(serpentine) + sum(nonserpentine)))
+write.csv(fri_b, "~/Desktop/R/CASerpSoilDiversity/output/fri_b_e4n6.csv")
+```
+```{r}
+library(dplyr)
+library(tidyr)
+library(rlang)
+
+calculate_FRIb <- function(df,
+                           group_a = "serpentine",
+                           group_b = "nonserpentine",
+                           function_col = "eggnog_3",
+                           taxon_col = "ncbi_05",
+                           group_col = "soil.chem",
+                           count_col = "n()") {
+  
+  # Load required library
+  library(dplyr)
+  library(data.table)
+  
+  # Rename columns using symbols
+  fn_col  <- rlang::sym(function_col)
+  tax_col <- rlang::sym(taxon_col)
+  grp_col <- rlang::sym(group_col)
+  cnt_col <- rlang::sym(count_col)
+
+  # Step 1: Compute Pi
+  df_pi <- df %>%
+    filter(!!grp_col %in% c(group_a, group_b), !is.na(!!tax_col)) %>%
+    group_by(!!fn_col, !!grp_col) %>%
+    mutate(Pi = !!cnt_col / sum(!!cnt_col)) %>%
+    ungroup() %>%
+    select(Function = !!fn_col, Taxa = !!tax_col, Group = !!grp_col, Pi)
+
+  # Step 2: Reshape with data.table
+  dt <- as.data.table(df_pi)
+  fri_b_wide <- dcast(dt, Function + Taxa ~ Group, value.var = "Pi", fill = 0, fun.aggregate = sum)
+
+  # Step 3: Calculate FRIb
+  fri_b_result <- fri_b_wide[, .(
+    FRIb = 1 - 2 * sum(pmin(get(group_a), get(group_b))) /
+              (sum(get(group_a)) + sum(get(group_b)))
+  ), by = Function]
+
+  return(fri_b_result)
+}
+
+fri_b_results <- calculate_FRIb(df.ncbi_eggnog_filtered_ncbisplit_count_merged)
+```
+```{r}
+df_duplicates <- dt %>%
+  group_by(eggnog_3, ncbi_06, soil.chem) %>%
+  filter(n() > 1) %>%
+  arrange(eggnog_3, ncbi_06, soil.chem)
+```
+```{r}
+fri_a_results_e3n5$soil.chem <- as.factor(fri_a_results_e3n5$soil.chem)
+fri_a_results_e3n5$eggnog_3 <- as.factor(fri_a_results_e3n5$eggnog_3)
+res_aov_soil.chem <- aov(FRInorm ~ soil.chem, data = fri_a_results_e3n5)
+summary(res_aov_soil.chem)
+
+res_aov_e3 <- aov(FRInorm ~ eggnog_3, data = fri_a_results_e3n5)
+summary(res_aov_e3)
+TukeyHSD(res_aov_e3)
+
+res_aov_soil.chem_e3 <- aov(FRInorm ~ soil.chem*eggnog_3, data = fri_a_results_e3n5)
+summary(res_aov_soil.chem_e3)
+tukey_res_aov_soil.chem_e3<-TukeyHSD(res_aov_soil.chem_e3)
+tukey_res_aov_soil.chem_e3 <- as.data.frame(tukey_res_aov_soil.chem_e3)
+tukey_res_aov_soil.chem_e3$`soil.chem:eggnog_3`
+write.csv(tukey_res_aov_soil.chem_e3$`soil.chem:eggnog_3`,"~/Desktop/R/CASerpSoilDiversity/output/Tukey_res_aov_soil.chem_e3.csv")
+
+
+#                   Df Sum Sq Mean Sq
+#soil.chem           1  0.014 0.01363
+#eggnog_3           21  3.915 0.18644
+#soil.chem:eggnog_3 21  0.032 0.00154
+```
+```{r}
+library(lme4)
+library(lmerTest)  # for p-values
+
+res_lmer <- lmer(FRInorm ~ soil.chem + (1|eggnog_3), data = fri_a_results_e3n5)
+summary(res_lmer)
+```
+```{r}
+library(dplyr)
+
+res_per_func <- fri_a_results_e3n5 %>%
+  group_by(eggnog_3) %>%
+  summarise(
+    test = list(
+      tryCatch(
+        t.test(FRInorm ~ soil.chem, data = cur_data()),
+        error = function(e) NULL
+      )
+    ),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    p.value = sapply(test, function(x) if (!is.null(x)) x$p.value else NA),
+    p.adj = p.adjust(p.value, method = "fdr")
+  ) %>%
+  select(eggnog_3, p.value, p.adj)
+
+res_per_func
+```
