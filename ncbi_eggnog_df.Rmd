@@ -1,0 +1,90 @@
+---
+title: "CASerpSoilDiv_20240404"
+author: "Allie Igwe"
+date: "4/4/2024"
+output: html_document
+---
+#creating df.ncbi_eggnog_filtered_ncbisplit_count_merged
+
+load libraries
+```{r}
+library(stringr) #to split taxonomies
+library(dplyr)
+library(reshape2) #to create matrix from longform data
+library(phyloseq)
+library(decontam)
+library(ggplot2)
+library(ggh4x)
+library(splitstackshape) #csplit
+library(tidyr) #separate
+```
+#import data
+```{r}
+#import read-to-count output from MEGAN6
+`13.robns_merged_daa2info_r2c` <- read.delim("~/CASerpSoil/input/13-robns_merged_daa2info_r2c.stdout", header=FALSE, comment.char="#")
+#subset the databases of interest (NCBI and eggNOG)
+daa2info_r2c_13robns.ncbi <- `13.robns_merged_daa2info_r2c`[grep("NCBI", `13.robns_merged_daa2info_r2c`$V2), ]
+daa2info_r2c_13robns.eggnog <- `13.robns_merged_daa2info_r2c`[grep("eggNOG", `13.robns_merged_daa2info_r2c`$V2), ]
+#merge the subsetted databases into one data frame
+daa2info_r2c_13robns.ncbi_eggnog <- merge(daa2info_r2c_13robns.ncbi,daa2info_r2c_13robns.eggnog,by="V1",all.x=FALSE)
+daa2info_r2c_13robns.ncbi_eggnog$sample_name <- "13-robns"
+colnames(daa2info_r2c_13robns.ncbi_eggnog) <- c("seq_id","ncbi","eggnog","sample_name")
+
+#import data and change column names
+daa2info_r2c_ncbi_eggnog_df_all <- readRDS("~/CASerpSoil/input/daa2info_r2c_ncbi_eggnog_df_all.RDS")
+colnames(daa2info_r2c_ncbi_eggnog_df_all) 
+#"V1"          "V2.x"        "V2.y"        "sample_name"
+head(daa2info_r2c_ncbi_eggnog_df_all, 3)
+colnames(daa2info_r2c_ncbi_eggnog_df_all) <- c("seq_id","ncbi","eggnog","sample_name")
+
+#merge individual sample data frames into one large data frame
+daa2info_r2c_ncbi_eggnog_df_all_42 <- merge(daa2info_r2c_ncbi_eggnog_df_all, daa2info_r2c_13robns.ncbi_eggnog, 
+                          by = 'row.names', all = TRUE) 
+
+#check unique sample names and update names that are incorrect
+#https://www.statology.org/replace-values-in-data-frame-r/
+#df['c'][df['c'] == 14] <- 24
+unique(daa2info_r2c_ncbi_eggnog_df_all$sample_name)
+#"26mars"    "27fols"    "28fors" 
+daa2info_r2c_ncbi_eggnog_df_all["sample_name"][daa2info_r2c_ncbi_eggnog_df_all["sample_name"] == "26mars"] <- "26-mars"
+daa2info_r2c_ncbi_eggnog_df_all["sample_name"][daa2info_r2c_ncbi_eggnog_df_all["sample_name"] == "27fols"] <- "27-fols"
+daa2info_r2c_ncbi_eggnog_df_all["sample_name"][daa2info_r2c_ncbi_eggnog_df_all["sample_name"] == "28fors"] <- "28-fors"
+
+saveRDS(daa2info_r2c_ncbi_eggnog_df_all_44, "~/CASerpSoil/input/daa2info_r2c_ncbi_eggnog_df_all_44.RDS")
+
+#import metadata
+soiltaxonomy_metadata <- read_csv("CASerpSoil/soiltaxonomy_metadata.csv")
+
+# Find the missing sample names
+missing_sample_names <- setdiff(unique(daa2info_r2c_ncbi_eggnog_df_all$sample_name), unique(soiltaxonomy_metadata$sample.name))
+
+# Print the missing sample names
+print(missing_sample_names)
+
+#identify samples and blank
+daa2info_r2c_ncbi_eggnog_df_all$sample_type <- ifelse(daa2info_r2c_ncbi_eggnog_df_all$sample_name %in% c("47-B1", "48-B2"), "blank", "sample")
+```
+#create ncbi-eggnog phyloseq without seqids - assigned functions only
+```{r}
+#create seqid_ncbi column
+#daa2info_r2c_ncbi_eggnog_df_all$ncbi_eggnog<-paste(daa2info_r2c_ncbi_eggnog_df_all$daa2info_r2c_ncbi_eggnog_df_all$ncbi,daa2info_r2c_ncbi_eggnog_df_all$eggnog,sep=";")
+#daa2info_r2c_ncbi_eggnog_df_test <- daa2info_r2c_ncbi_eggnog_df_all[1:50,]
+
+daa2info_r2c_ncbi_eggnog_df_eggnogsplit <- cSplit(daa2info_r2c_ncbi_eggnog_df_all, "eggnog", sep = ";", direction = "wide", fixed = FALSE)
+# Subset the main data frame to remove rows with "not assigned" in eggnog_2
+daa2info_r2c_ncbi_eggnog_df_filtered <- subset(daa2info_r2c_ncbi_eggnog_df_eggnogsplit, eggnog_2 != "Not assigned")
+daa2info_r2c_ncbi_eggnog_df_NA <- subset(daa2info_r2c_ncbi_eggnog_df_eggnogsplit, eggnog_2 == "Not assigned")
+
+daa2info_r2c_ncbi_eggnog_df_filtered_ncbisplit <- cSplit(daa2info_r2c_ncbi_eggnog_df_filtered, "ncbi", sep = ";", direction = "wide", fixed = FALSE)
+daa2info_r2c_ncbi_eggnog_df_test_filtered <- (subset(daa2info_r2c_ncbi_eggnog_df_test_filtered, select = -c(seq_id)))
+
+#aggregate information for otu table
+df.ncbi_eggnog_filtered_ncbisplit_count <- daa2info_r2c_ncbi_eggnog_df_filtered_ncbisplit %>%
+  group_by(eggnog_3,eggnog_4,ncbi_03,ncbi_04,ncbi_05,ncbi_06,ncbi_07,sample_name) %>%
+  summarize(n())
+
+soiltaxonomy_metadata$sample_name <- soiltaxonomy_metadata$sample.name
+merged_df <- merge(df.ncbi_eggnog_filtered_ncbisplit_count, soiltaxonomy_metadata, by = "sample_name", all.x = TRUE)
+df.ncbi_eggnog_filtered_ncbisplit_count_merged <- (subset(merged_df, select = -c(sample.name)))
+rm(merged_df)
+```
