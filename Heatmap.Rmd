@@ -186,7 +186,7 @@ heatmap_df <- heatmap_df %>%
 heatmap_df <- heatmap_df %>%
   left_join(ncbi_tax_table_copy[, c("SeqID", "Superphylum")],
             by = c("Taxa" = "SeqID")) %>%
-  mutate(Taxa = ifelse(is.na(Superphylum), Taxa, Phylum))
+  mutate(Taxa = ifelse(is.na(Superphylum), Taxa, Superphylum))
 
 #Filter top taxa by correlation strength
 top_taxa <- heatmap_df %>%
