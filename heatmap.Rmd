@@ -1,0 +1,224 @@
+---
+title: "Heatmap"
+author: "Alexandria igwe"
+date: "03/06/2026"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#Load libraries
+library(reshape2)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+```
+```{r}
+#upload
+#ncbi phyloseq object
+#physeq.ncbi.decontam
+#eggNOG phyloseq object
+#physeq.eggNOG.decontam
+#results from correlation analysis
+#cor_result_03182025
+```
+```{r}
+#upload ncbi and eggnog phyloseq objects
+#make a column of sample id based on rownames
+#remove controls and failed samples
+#make a copy of the tax table in case you do something wrong and you won't have to upload everything again
+rownames(physeq.ncbi.decontam@sam_data)
+physeq.ncbi.decontam@sam_data$sampleid <- rownames(physeq.ncbi.decontam@sam_data)
+physeq.ncbi.decontam.subset = subset_samples(physeq.ncbi.decontam, sampleid!="47-B1" & 
+                                          sampleid!="48-B2" & 
+                                          sampleid!="30-tris")
+ncbi_tax_table <- as.data.frame(physeq.ncbi.decontam.subset@tax_table)
+ncbi_tax_table_copy <- ncbi_tax_table
+ncbi_tax_table_copy$SeqID <- rownames(ncbi_tax_table_copy)
+ncbi_tax_table_copy$Seq <- rownames(ncbi_tax_table_copy)
+
+rownames(physeq.eggNOG.decontam@sam_data)
+physeq.eggNOG.decontam@sam_data$sampleid <- rownames(physeq.eggNOG.decontam@sam_data)
+physeq.eggNOG.decontam.subset = subset_samples(physeq.eggNOG.decontam, sampleid!="47-B1" & 
+                                          sampleid!="48-B2" & 
+                                          sampleid!="30-tris")
+eggnog_tax_table <- as.data.frame(physeq.eggNOG.decontam.subset@tax_table)
+colnames(eggnog_tax_table)[1] <- "eggNOG_1"
+colnames(eggnog_tax_table)[2] <- "eggNOG_2"
+colnames(eggnog_tax_table)[3] <- "eggNOG_3"
+colnames(eggnog_tax_table)[4] <- "eggNOG_4"
+eggnog_tax_table_copy <- eggnog_tax_table
+eggnog_tax_table_copy$FunID <- rownames(eggnog_tax_table_copy)
+eggnog_tax_table_copy$Fun <- rownames(eggnog_tax_table_copy)
+```
+```{r}
+#COG label table from randomForest
+cog_labels <- data.frame(
+  COG = c(
+    "COG0241","COG1113","COG1445","COG0171","COG1010","COG2226",
+    "COG2240","COG2243","COG0080","COG0200","COG1867","COG1996",
+    "COG1658","COG3293","COG5380","COG0053","COG4604","COG5310","COG3838"
+  ),
+  Description = c(
+    "Histidinol-phosphatase",
+    "Amino acid metabolism",
+    "PTS system transporter",
+    "NH3-dependent NAD synthetase",
+    "Precorrin-3B C17-methyltransferase",
+    "Menaquinone methyltransferase",
+    "Pyridoxal kinase",
+    "Precorrin-2 C20-methyltransferase",
+    "23S rRNA binding protein",
+    "23S rRNA binding protein",
+    "tRNA guanine methyltransferase",
+    "DNA-dependent RNA polymerase",
+    "Ribonuclease M5",
+    "Transposase",
+    "Lipid catabolic process",
+    "Cation diffusion facilitator transporter",
+    "ABC transporter ATP-binding protein",
+    "Homospermidine synthase",
+    "Conjugal transfer protein TrbC"
+  )
+)
+```
+```{r}
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(stringr)
+
+#Define critical COGs
+cogs_subset <- c(
+  "COG0241","COG1113","COG1445","COG0171","COG1010","COG2226",
+  "COG2240","COG2243","COG0080","COG0200","COG1867","COG1996",
+  "COG1658","COG3293","COG5380","COG0053","COG4604","COG5310","COG3838"
+)
+
+cog_labels <- data.frame(
+  COG = cogs_subset,
+  Description = c(
+    "Histidinol-phosphatase",
+    "Amino acid metabolism",
+    "PTS system transporter",
+    "NH3-dependent NAD synthetase",
+    "Precorrin-3B C17-methyltransferase",
+    "Menaquinone methyltransferase",
+    "Pyridoxal kinase",
+    "Precorrin-2 C20-methyltransferase",
+    "23S rRNA binding protein",
+    "23S rRNA binding protein",
+    "tRNA guanine methyltransferase",
+    "DNA-dependent RNA polymerase",
+    "Ribonuclease M5",
+    "Transposase",
+    "Lipid catabolic process",
+    "Cation diffusion facilitator transporter",
+    "ABC transporter ATP-binding protein",
+    "Homospermidine synthase",
+    "Conjugal transfer protein TrbC"
+  )
+)
+
+#Convert correlation matrix to long format
+heatmap_df <- melt(as.matrix(cor_result_03182025$r),
+                   varnames = c("Taxa", "FunID"),
+                   value.name = "Correlation")
+
+#Annotate COGs
+heatmap_df <- heatmap_df %>%
+  left_join(eggnog_tax_table_copy[, c("Fun", "eggNOG_4")],
+            by = c("FunID" = "Fun")) %>%
+  # Extract COG ID from eggNOG_4
+  mutate(COG = str_extract(eggNOG_4, "COG[0-9]+")) %>%
+  filter(COG %in% cogs_subset) %>%
+  # Join human-readable COG description
+  left_join(cog_labels, by = "COG") %>%
+  mutate(COG_label = paste(COG, Description, sep = " – "))
+
+#Remove unwanted taxa
+#Firmicutes had grey tiles across every COG
+remove_taxa <- ncbi_tax_table_copy %>%
+  filter(
+    Phylum == "Bacteria incertae sedis" |
+    grepl("environmental samples", ncbi, ignore.case = TRUE) |
+    grepl("unclassified Bacteria", ncbi, ignore.case = TRUE) |
+      grepl("Firmicutes", ncbi, ignore.case = TRUE)
+  ) %>%
+  pull(SeqID)
+
+heatmap_df <- heatmap_df %>%
+  filter(!Taxa %in% remove_taxa)
+
+#replace SeqIDs with Genus
+heatmap_df <- heatmap_df %>%
+  left_join(ncbi_tax_table_copy[, c("SeqID", "Genus")],
+            by = c("Taxa" = "SeqID")) %>%
+  mutate(Taxa = ifelse(is.na(Genus), Taxa, Genus))
+
+#run genus then family to get rid of all those SeqIDs in the heatmap
+heatmap_df <- heatmap_df %>%
+  left_join(ncbi_tax_table_copy[, c("SeqID", "Family")],
+            by = c("Taxa" = "SeqID")) %>%
+  mutate(Taxa = ifelse(is.na(Phylum), Taxa, Family))
+
+#run genus then order to get rid of all those SeqIDs in the heatmap
+heatmap_df <- heatmap_df %>%
+  left_join(ncbi_tax_table_copy[, c("SeqID", "Order")],
+            by = c("Taxa" = "SeqID")) %>%
+  mutate(Taxa = ifelse(is.na(Phylum), Taxa, Order))
+
+#run genus then class to get rid of all those SeqIDs in the heatmap
+heatmap_df <- heatmap_df %>%
+  left_join(ncbi_tax_table_copy[, c("SeqID", "Class")],
+            by = c("Taxa" = "SeqID")) %>%
+  mutate(Taxa = ifelse(is.na(Phylum), Taxa, Class))
+
+#run genus then phylum to get rid of all those SeqIDs in the heatmap
+heatmap_df <- heatmap_df %>%
+  left_join(ncbi_tax_table_copy[, c("SeqID", "Phylum")],
+            by = c("Taxa" = "SeqID")) %>%
+  mutate(Taxa = ifelse(is.na(Phylum), Taxa, Phylum))
+
+#run genus then superphylum to get rid of all those SeqIDs in the heatmap
+heatmap_df <- heatmap_df %>%
+  left_join(ncbi_tax_table_copy[, c("SeqID", "Superphylum")],
+            by = c("Taxa" = "SeqID")) %>%
+  mutate(Taxa = ifelse(is.na(Superphylum), Taxa, Phylum))
+
+#Filter top taxa by correlation strength
+top_taxa <- heatmap_df %>%
+  group_by(Taxa) %>%
+  summarise(max_corr = max(abs(Correlation), na.rm = TRUE)) %>%
+  arrange(desc(max_corr)) %>%
+  slice(1:40) %>%
+  pull(Taxa)
+
+heatmap_df <- heatmap_df %>%
+  filter(Taxa %in% top_taxa)
+
+#Cluster taxa
+cluster_matrix <- dcast(heatmap_df, Taxa ~ COG_label, value.var = "Correlation")
+row.names(cluster_matrix) <- cluster_matrix$Taxa
+cluster_matrix$Taxa <- NULL
+cluster_matrix[is.na(cluster_matrix)] <- 0  # for clustering
+
+taxa_cluster <- hclust(dist(cluster_matrix), method = "ward.D2")
+taxa_order <- taxa_cluster$labels[taxa_cluster$order]
+heatmap_df$Taxa <- factor(heatmap_df$Taxa, levels = taxa_order)
+
+#Plot heatmap with COG labels
+heatmanp_cog <- ggplot(heatmap_df, aes(x = COG_label, y = Taxa, fill = Correlation)) +
+  geom_tile(color = "grey85") +
+  scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B",
+                       midpoint = 0, limits = c(-1,1)) +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7),
+        axis.text.y = element_text(size = 7, face = "italic"),
+        panel.grid = element_blank()) +
+  labs(x = "COG Functional Category", y = "Taxa", fill = expression(rho),
+       title = "Taxa–COG Correlation Heatmap")
+heatmanp_cog
+```
